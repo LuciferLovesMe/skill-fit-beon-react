@@ -34,15 +34,17 @@ export default function FinancePage() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
+  // Form State Pemasukan/Iuran
   const initialPaymentForm = {
     house_id: "",
     fee_type: "cleaning",
-    durasi_bulan: 1,
-    bulan_mulai: new Date().getMonth() + 1,
-    tahun: new Date().getFullYear(),
+    duration_months: 1,
+    start_month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
   };
   const [paymentFormData, setPaymentFormData] = useState(initialPaymentForm);
 
+  // Form State Pengeluaran Kas
   const initialExpenseForm = {
     description: "",
     amount: "",
@@ -50,7 +52,7 @@ export default function FinancePage() {
   };
   const [expenseFormData, setExpenseFormData] = useState(initialExpenseForm);
 
-  const namaBulan = [
+  const monthNames = [
     "Januari",
     "Februari",
     "Maret",
@@ -142,16 +144,47 @@ export default function FinancePage() {
     fetchExpenses(searchTerm, newPage);
   };
 
-  // Handlers Forms
+  // --- HANDLERS FORMS ---
   const handleSavePayment = async (e) => {
     e.preventDefault();
+
+    const selectedHouseObj = housesList.find(
+      (h) => h.id.toString() === paymentFormData.house_id.toString(),
+    );
+    const residentId = selectedHouseObj?.current_occupant?.resident?.id;
+
+    if (!residentId) {
+      alert(
+        "Error: Rumah yang dipilih tidak memiliki data penghuni (warga) yang aktif.",
+      );
+      return;
+    }
+
+    const baseAmount = paymentFormData.fee_type === "security" ? 100000 : 15000;
+
+    // PASTIKAN DATA ANGKA MURNI INTEGER (parseInt)
+    const payload = {
+      house_id: parseInt(paymentFormData.house_id),
+      resident_id: parseInt(residentId),
+      fee_type: paymentFormData.fee_type,
+      start_month: parseInt(paymentFormData.start_month), // <- Ini sebelumnya menyebabkan error di backend
+      year: parseInt(paymentFormData.year), // <- Ini juga
+      billed_amount: baseAmount,
+      paid_amount: baseAmount,
+      payment_date: new Date().toISOString().split("T")[0],
+      is_paid: 1,
+      duration_months: parseInt(paymentFormData.duration_months), // <- SANGAT PENTING: Ubah "1" jadi 1
+    };
+
     try {
-      await api.post("/v1/payments/pay", paymentFormData);
+      await api.post("/v1/payments/pay", payload);
       setIsPaymentModalOpen(false);
       setPaymentFormData(initialPaymentForm);
       fetchPayments(searchTerm, paymentPage);
+      alert("Pembayaran berhasil dicatat.");
     } catch (error) {
-      alert("Gagal mencatat pembayaran.");
+      console.error(error);
+      alert(error.response?.data?.message || "Gagal mencatat pembayaran.");
     }
   };
 
@@ -162,8 +195,9 @@ export default function FinancePage() {
       setIsExpenseModalOpen(false);
       setExpenseFormData(initialExpenseForm);
       fetchExpenses(searchTerm, expensePage);
+      alert("Pengeluaran berhasil dicatat.");
     } catch (error) {
-      alert("Gagal mencatat pengeluaran.");
+      alert(error.response?.data?.message || "Gagal mencatat pengeluaran.");
     }
   };
 
@@ -189,7 +223,7 @@ export default function FinancePage() {
         </span>
       ),
     },
-    { label: "Periode", render: (r) => `${namaBulan[r.month - 1]} ${r.year}` },
+    { label: "Periode", render: (r) => `${monthNames[r.month - 1]} ${r.year}` },
     {
       label: "Nominal Dibayar",
       render: (r) => (
@@ -357,7 +391,7 @@ export default function FinancePage() {
               {housesList.map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.block_number} - (
-                  {h.current_occupancy?.resident?.name || "Kosong"})
+                  {h.current_occupant?.resident?.name || "Kosong"})
                 </option>
               ))}
             </select>
@@ -391,11 +425,11 @@ export default function FinancePage() {
                 type="number"
                 min="1"
                 max="12"
-                value={paymentFormData.durasi_bulan}
+                value={paymentFormData.duration_months}
                 onChange={(e) =>
                   setPaymentFormData({
                     ...paymentFormData,
-                    durasi_bulan: e.target.value,
+                    duration_months: e.target.value,
                   })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
@@ -410,16 +444,17 @@ export default function FinancePage() {
               </label>
               <select
                 required
-                value={paymentFormData.bulan_mulai}
+                name="start_month"
+                value={paymentFormData.start_month}
                 onChange={(e) =>
                   setPaymentFormData({
                     ...paymentFormData,
-                    bulan_mulai: e.target.value,
+                    start_month: e.target.value,
                   })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white focus:ring-2 focus:ring-blue-500"
               >
-                {namaBulan.map((nama, idx) => (
+                {monthNames.map((nama, idx) => (
                   <option key={idx + 1} value={idx + 1}>
                     {idx + 1} - {nama}
                   </option>
@@ -434,17 +469,33 @@ export default function FinancePage() {
                 type="number"
                 min="2020"
                 max="2100"
-                value={paymentFormData.tahun}
+                value={paymentFormData.year}
                 onChange={(e) =>
                   setPaymentFormData({
                     ...paymentFormData,
-                    tahun: e.target.value,
+                    year: e.target.value,
                   })
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-600">
+                Estimasi Total Tagihan:
+              </span>
+              <span className="text-lg font-bold text-emerald-600">
+                Rp{" "}
+                {(
+                  (paymentFormData.fee_type === "security" ? 100000 : 15000) *
+                  paymentFormData.duration_months
+                ).toLocaleString("id-ID")}
+              </span>
+            </div>
+          </div>
+
           <div className="pt-4 flex justify-end space-x-3 border-t border-gray-100 mt-6">
             <button
               type="button"
