@@ -1,16 +1,44 @@
-# React + Vite
+# Frontend - Sistem Informasi Administrasi RT
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Ini adalah repository bagian **Frontend (User Interface)** untuk Sistem Administrasi RT, dikembangkan menggunakan library React JS (Vite) dan TailwindCSS.
 
-Currently, two official plugins are available:
+⚠️ **PENTING:** Pastikan Anda telah menginstal dan menjalankan server **Backend (Laravel)** terlebih dahulu sebelum menjalankan Frontend ini.
+_Repository Backend dapat diakses di:_ `[MASUKKAN LINK REPO BACKEND KAMU DI SINI]`
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Prasyarat Sistem
 
-## React Compiler
+Pastikan komputer Anda telah terinstal:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **Node.js** (Minimal versi 18+)
+2. **NPM** (Node Package Manager)
 
-## Expanding the ESLint configuration
+## 💻 Panduan Instalasi (Langkah demi Langkah)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+**1. Clone Repository**
+Buka terminal baru, lalu jalankan:
+
+```bash
+git clone [LINK_REPO_FRONTEND_KAMU]
+cd [NAMA_FOLDER_REPO_FRONTEND]
+```
+
+**2. Install Dependencies**
+
+Unduh semua library yang dibutuhkan oleh React:
+
+```bash
+npm install
+```
+
+**3. Jalankan Server Frontend**
+
+```bash
+npm run dev
+```
+
+**4. Akses Aplikasi**
+
+Buka browser Anda dan akses URL yang diberikan oleh Vite, biasanya:
+👉 http://localhost:5173
+
+Anda dapat langsung masuk ke dalam dashboard menggunakan kredensial yang telah dibuat oleh Backend Seeder.
