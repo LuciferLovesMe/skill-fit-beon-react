@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -12,121 +12,125 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import {
-  Activity,
   Home,
   Wallet,
   TrendingUp,
   TrendingDown,
   Users,
+  Loader2,
 } from "lucide-react";
-
-// --- MOCK DATA (Mensimulasikan response dari backend ReportController) ---
-const mockChartData = [
-  {
-    bulan_angka: 1,
-    bulan: "Jan",
-    pemasukan: 1725000,
-    pengeluaran: 500000,
-    saldo_sisa: 1225000,
-  },
-  {
-    bulan_angka: 2,
-    bulan: "Feb",
-    pemasukan: 1725000,
-    pengeluaran: 600000,
-    saldo_sisa: 2350000,
-  },
-  {
-    bulan_angka: 3,
-    bulan: "Mar",
-    pemasukan: 1500000,
-    pengeluaran: 800000,
-    saldo_sisa: 3050000,
-  },
-  {
-    bulan_angka: 4,
-    bulan: "Apr",
-    pemasukan: 1725000,
-    pengeluaran: 400000,
-    saldo_sisa: 4375000,
-  },
-  {
-    bulan_angka: 5,
-    bulan: "Mei",
-    pemasukan: 1600000,
-    pengeluaran: 1200000,
-    saldo_sisa: 4775000,
-  },
-  {
-    bulan_angka: 6,
-    bulan: "Jun",
-    pemasukan: 1725000,
-    pengeluaran: 300000,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 7,
-    bulan: "Jul",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 8,
-    bulan: "Agu",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 9,
-    bulan: "Sep",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 10,
-    bulan: "Okt",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 11,
-    bulan: "Nov",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-  {
-    bulan_angka: 12,
-    bulan: "Des",
-    pemasukan: 0,
-    pengeluaran: 0,
-    saldo_sisa: 6200000,
-  },
-];
-
-const StatCard = ({ title, value, icon: Icon, colorClass, subtitle }) => (
-  <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 flex items-center space-x-5 hover:shadow-md transition-shadow">
-    <div
-      className={`w-14 h-14 ${colorClass} rounded-2xl flex items-center justify-center text-white shrink-0`}
-    >
-      <Icon className="w-7 h-7" />
-    </div>
-    <div>
-      <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
-      <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
-      {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
-    </div>
-  </div>
-);
+import api from "../api/api";
 
 export default function DashboardPage() {
-  const [selectedYear, setSelectedYear] = useState("2026");
+  const currentYear = new Date().getFullYear().toString();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+
+  // Data State
+  const [chartData, setChartData] = useState([]);
+  const [summaryStats, setSummaryStats] = useState({
+    totalIncome: 0,
+    totalExpense: 0,
+    currentBalance: 0,
+  });
+  const [houseStats, setHouseStats] = useState({ occupied: 0, vacant: 0 });
+  const [residentCount, setResidentCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fungsi memformat singkatan bulan agar muat di Chart (ex: "Januari" -> "Jan")
+  const formatMonth = (fullMonthName) => {
+    return fullMonthName ? fullMonthName.substring(0, 3) : "";
+  };
+
+  // --- FETCH DATA DASHBOARD ---
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Ambil Laporan Keuangan Tahunan
+      const reportRes = await api.get("/v1/reports/yearly", {
+        params: { year: selectedYear },
+      });
+      const rawChartData = reportRes.data.data;
+
+      // Format data untuk Chart
+      const formattedChartData = rawChartData.map((item) => ({
+        ...item,
+        month_short: formatMonth(item.monthName),
+        income: parseInt(item.income || 0),
+        outcome: parseInt(item.outcome || 0),
+        balance: parseInt(item.balance || 0),
+      }));
+      setChartData(formattedChartData);
+
+      // Kalkulasi Ringkasan Keuangan (Total setahun)
+      const totalInc = rawChartData.reduce(
+        (acc, curr) => acc + parseInt(curr.income || 0),
+        0,
+      );
+      const totalExp = rawChartData.reduce(
+        (acc, curr) => acc + parseInt(curr.outcome || 0),
+        0,
+      );
+      // Saldo akhir adalah balance di bulan ke-12 (Desember)
+      const finalBalance = rawChartData[11]?.balance || 0;
+
+      setSummaryStats({
+        totalIncome: totalInc,
+        totalExpense: totalExp,
+        currentBalance: finalBalance,
+      });
+
+      // 2. Ambil Statistik Rumah & Penghuni
+      const housesRes = await api.get("/v1/houses", {
+        params: { per_page: 100 },
+      });
+      const residentsRes = await api.get("/v1/residents", {
+        params: { per_page: 100 },
+      });
+
+      const houses = housesRes.data.data;
+      const occupiedCount = houses.filter(
+        (h) => h.is_occupied === 1 || h.occupancy_status === "occupied",
+      ).length;
+
+      setHouseStats({
+        occupied: occupiedCount,
+        vacant: houses.length - occupiedCount,
+      });
+      setResidentCount(residentsRes.data.data.length);
+    } catch (error) {
+      console.error("Gagal mengambil data dashboard:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Trigger ulang jika tahun diganti
+  useEffect(() => {
+    fetchDashboardData();
+  }, [selectedYear]);
 
   // Komponen Helper untuk Card Statistik di atas
+  const StatCard = ({ title, value, icon: Icon, colorClass, subtitle }) => (
+    <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 flex items-center space-x-5 hover:shadow-md transition-shadow relative overflow-hidden">
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+        </div>
+      )}
+
+      <div
+        className={`w-14 h-14 ${colorClass} rounded-2xl flex items-center justify-center text-white shrink-0`}
+      >
+        <Icon className="w-7 h-7" />
+      </div>
+      <div>
+        <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
+        <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+        {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -137,45 +141,52 @@ export default function DashboardPage() {
             Dashboard Statistik
           </h2>
           <p className="text-gray-500 text-sm mt-1">
-            Ringkasan kondisi hunian dan keuangan RT tahun berjalan
+            Ringkasan kondisi hunian dan keuangan RT terpadu
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
           <span className="text-sm text-gray-500 font-medium">Tahun:</span>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="bg-transparent text-gray-800 font-bold outline-none cursor-pointer"
           >
             <option value="2026">2026</option>
             <option value="2025">2025</option>
+            <option value="2024">2024</option>
           </select>
         </div>
       </div>
 
-      {/* TOP STATS CARDS (4 Kolom di Desktop) */}
+      {/* TOP STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Saldo Kas RT Saat Ini"
-          value="Rp 6.200.000"
+          title="Saldo Kas RT (Berjalan)"
+          value={`Rp ${summaryStats.currentBalance.toLocaleString("id-ID")}`}
           icon={Wallet}
           colorClass="bg-blue-600"
-          subtitle="Akumulasi hingga bulan ini"
+          subtitle="Akumulasi sisa kas bersih"
         />
         <StatCard
-          title="Total Pemasukan (Thn Ini)"
-          value="Rp 9.600.000"
+          title={`Total Pemasukan (${selectedYear})`}
+          value={`Rp ${summaryStats.totalIncome.toLocaleString("id-ID")}`}
           icon={TrendingUp}
           colorClass="bg-emerald-500"
         />
         <StatCard
-          title="Total Pengeluaran (Thn Ini)"
-          value="Rp 3.400.000"
+          title={`Total Pengeluaran (${selectedYear})`}
+          value={`Rp ${summaryStats.totalExpense.toLocaleString("id-ID")}`}
           icon={TrendingDown}
           colorClass="bg-rose-500"
         />
-        <div className="flex flex-col gap-4">
-          {/* Card Mini untuk status hunian */}
+        <div className="flex flex-col gap-4 relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl">
+              <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+            </div>
+          )}
+          {/* Card Mini status hunian */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 flex items-center space-x-4">
             <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
               <Home className="w-5 h-5" />
@@ -185,11 +196,13 @@ export default function DashboardPage() {
                 Rumah Dihuni / Kosong
               </p>
               <p className="font-bold text-gray-800">
-                15 <span className="text-gray-300 mx-1">/</span> 5
+                {houseStats.occupied}{" "}
+                <span className="text-gray-300 mx-1">/</span>{" "}
+                {houseStats.vacant}
               </p>
             </div>
           </div>
-          {/* Card Mini untuk status warga */}
+          {/* Card Mini status warga */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 flex items-center space-x-4">
             <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
               <Users className="w-5 h-5" />
@@ -198,7 +211,7 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 font-medium">
                 Total Warga Terdaftar
               </p>
-              <p className="font-bold text-gray-800">12 Orang</p>
+              <p className="font-bold text-gray-800">{residentCount} Orang</p>
             </div>
           </div>
         </div>
@@ -206,22 +219,25 @@ export default function DashboardPage() {
 
       {/* CHARTS AREA */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* CHART 1: Pemasukan vs Pengeluaran (Bar Chart) - Mengambil porsi 2/3 layar */}
-        {/* Hapus flex-col agar container tidak ambigu */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+        {/* CHART 1: Pemasukan vs Pengeluaran (Bar Chart) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2 relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            </div>
+          )}
           <div className="mb-6">
             <h3 className="text-lg font-bold text-gray-800">
               Arus Kas Bulanan
             </h3>
             <p className="text-sm text-gray-500">
-              Perbandingan uang masuk (iuran) dan keluar
+              Perbandingan uang masuk (iuran) dan keluar di tahun {selectedYear}
             </p>
           </div>
-          {/* Berikan nilai min-height eksplisit agar chart tidak mengecil jadi 0 */}
           <div className="w-full h-80 min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={mockChartData}
+                data={chartData}
                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
                 <CartesianGrid
@@ -230,7 +246,7 @@ export default function DashboardPage() {
                   stroke="#f3f4f6"
                 />
                 <XAxis
-                  dataKey="bulan"
+                  dataKey="month_short"
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: "#6b7280" }}
@@ -249,6 +265,11 @@ export default function DashboardPage() {
                     border: "none",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
+                  labelStyle={{
+                    fontWeight: "bold",
+                    color: "#1f2937",
+                    marginBottom: "8px",
+                  }}
                   formatter={(value) => [
                     `Rp ${value.toLocaleString("id-ID")}`,
                     undefined,
@@ -259,14 +280,14 @@ export default function DashboardPage() {
                   wrapperStyle={{ paddingTop: "20px" }}
                 />
                 <Bar
-                  dataKey="pemasukan"
+                  dataKey="income"
                   name="Pemasukan"
                   fill="#10b981"
                   radius={[4, 4, 0, 0]}
                   barSize={24}
                 />
                 <Bar
-                  dataKey="pengeluaran"
+                  dataKey="outcome"
                   name="Pengeluaran"
                   fill="#f43f5e"
                   radius={[4, 4, 0, 0]}
@@ -277,8 +298,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* CHART 2: Saldo Kumulatif (Line Chart) - Mengambil porsi 1/3 layar */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        {/* CHART 2: Saldo Kumulatif (Line Chart) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            </div>
+          )}
           <div className="mb-6">
             <h3 className="text-lg font-bold text-gray-800">
               Pertumbuhan Saldo RT
@@ -288,7 +314,7 @@ export default function DashboardPage() {
           <div className="w-full h-80 min-h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={mockChartData}
+                data={chartData}
                 margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
               >
                 <CartesianGrid
@@ -297,7 +323,7 @@ export default function DashboardPage() {
                   stroke="#f3f4f6"
                 />
                 <XAxis
-                  dataKey="bulan"
+                  dataKey="month_short"
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 12, fill: "#6b7280" }}
@@ -309,6 +335,11 @@ export default function DashboardPage() {
                     border: "none",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
+                  labelStyle={{
+                    fontWeight: "bold",
+                    color: "#1f2937",
+                    marginBottom: "8px",
+                  }}
                   formatter={(value) => [
                     `Rp ${value.toLocaleString("id-ID")}`,
                     "Total Saldo",
@@ -316,7 +347,7 @@ export default function DashboardPage() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="saldo_sisa"
+                  dataKey="balance"
                   name="Saldo"
                   stroke="#3b82f6"
                   strokeWidth={4}
