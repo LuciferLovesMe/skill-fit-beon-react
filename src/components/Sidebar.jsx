@@ -1,8 +1,27 @@
-import React from "react";
+import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { MapPin, Activity, Users, Home, DollarSign } from "lucide-react";
+import {
+  MapPin,
+  Activity,
+  Users,
+  Home,
+  DollarSign,
+  LogOut,
+} from "lucide-react";
 
 export default function Sidebar() {
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // --- FUNGSI LOGOUT ---
+  const handleLogout = () => {
+    setIsLoggingOut(true);
+
+    setTimeout(() => {
+      localStorage.removeItem("token");
+      // Refresh dan arahkan ke login agar state global bersih
+      window.location.href = "/login";
+    }, 600);
+  };
   const menuItems = [
     { path: "/", icon: Activity, label: "Dashboard" },
     { path: "/residents", icon: Users, label: "Kelola Penghuni" },
@@ -34,6 +53,18 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+      <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+        <button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="w-full flex items-center justify-between px-4 py-3 text-rose-400 hover:bg-rose-500/10 rounded-xl text-sm font-medium transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="flex items-center space-x-3">
+            <LogOut className="w-5 h-5 text-rose-500/70 group-hover:text-rose-400 transition-colors" />
+            <span>{isLoggingOut ? "Keluar..." : "Keluar Aplikasi"}</span>
+          </div>
+        </button>
+      </div>
       <div className="p-4 text-xs text-slate-500 text-center">
         Sistem RT v1.0
       </div>

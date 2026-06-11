@@ -16,31 +16,33 @@ import api from "../api/api";
 import Table from "../components/Table";
 
 export default function FinancePage() {
-  const [activeTab, setActiveTab] = useState("pemasukan"); // 'pemasukan' | 'pengeluaran'
+  const [activeTab, setActiveTab] = useState("pemasukan");
 
-  // Data State
   const [payments, setPayments] = useState([]);
   const [expenses, setExpenses] = useState([]);
-  const [housesList, setHousesList] = useState([]); // Untuk dropdown pilihan rumah di form Iuran
+  const [housesList, setHousesList] = useState([]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Modal State
+  // State Pagination Terpisah
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentMeta, setPaymentMeta] = useState(null);
+  const [expensePage, setExpensePage] = useState(1);
+  const [expenseMeta, setExpenseMeta] = useState(null);
+
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
-  // Form State Iuran (Berdasarkan ERD)
   const initialPaymentForm = {
     house_id: "",
-    fee_type: "cleaning", // 'cleaning' | 'security'
-    durasi_bulan: 1, // Untuk kalkulasi bulk payment
+    fee_type: "cleaning",
+    durasi_bulan: 1,
     bulan_mulai: new Date().getMonth() + 1,
     tahun: new Date().getFullYear(),
   };
   const [paymentFormData, setPaymentFormData] = useState(initialPaymentForm);
 
-  // Form State Pengeluaran (Berdasarkan ERD)
   const initialExpenseForm = {
     description: "",
     amount: "",
@@ -64,13 +66,17 @@ export default function FinancePage() {
   ];
 
   // --- FETCH DATA ---
-  const fetchPayments = async () => {
+  const fetchPayments = async (
+    searchQuery = searchTerm,
+    page = paymentPage,
+  ) => {
     setIsLoading(true);
     try {
       const response = await api.get("/v1/payments", {
-        params: { search: searchTerm },
+        params: { search: searchQuery, page: page, per_page: 10 },
       });
       setPayments(response.data.data);
+      setPaymentMeta(response.data.meta);
     } catch (error) {
       console.error("Gagal mengambil data pemasukan:", error);
     } finally {
@@ -78,13 +84,17 @@ export default function FinancePage() {
     }
   };
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = async (
+    searchQuery = searchTerm,
+    page = expensePage,
+  ) => {
     setIsLoading(true);
     try {
       const response = await api.get("/v1/expenses", {
-        params: { search: searchTerm },
+        params: { search: searchQuery, page: page, per_page: 10 },
       });
       setExpenses(response.data.data);
+      setExpenseMeta(response.data.meta);
     } catch (error) {
       console.error("Gagal mengambil data pengeluaran:", error);
     } finally {
@@ -94,7 +104,6 @@ export default function FinancePage() {
 
   const fetchHousesForDropdown = async () => {
     try {
-      // Ambil rumah yang hanya 'dihuni' karena yang ditagih iuran hanya yang ada orangnya
       const response = await api.get("/v1/houses", {
         params: { status_hunian: "dihuni", per_page: 100 },
       });
@@ -104,12 +113,17 @@ export default function FinancePage() {
     }
   };
 
+  // Efek Search (Reset ke page 1)
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      if (activeTab === "pemasukan") fetchPayments();
-      else fetchExpenses();
+      if (activeTab === "pemasukan") {
+        setPaymentPage(1);
+        fetchPayments(searchTerm, 1);
+      } else {
+        setExpensePage(1);
+        fetchExpenses(searchTerm, 1);
+      }
     }, 500);
-
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, activeTab]);
 
@@ -117,39 +131,42 @@ export default function FinancePage() {
     fetchHousesForDropdown();
   }, []);
 
-  // --- HANDLERS: PEMBAYARAN IURAN ---
+  // Handlers Pagination
+  const handlePaymentPageChange = (newPage) => {
+    setPaymentPage(newPage);
+    fetchPayments(searchTerm, newPage);
+  };
+
+  const handleExpensePageChange = (newPage) => {
+    setExpensePage(newPage);
+    fetchExpenses(searchTerm, newPage);
+  };
+
+  // Handlers Forms
   const handleSavePayment = async (e) => {
     e.preventDefault();
     try {
-      // Hit endpoint untuk membayar (Sesuai dengan logic backend Laravel modular yang bisa bulk)
       await api.post("/v1/payments/pay", paymentFormData);
       setIsPaymentModalOpen(false);
       setPaymentFormData(initialPaymentForm);
-      fetchPayments();
-      alert("Pembayaran berhasil dicatat.");
+      fetchPayments(searchTerm, paymentPage);
     } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || "Gagal mencatat pembayaran.");
+      alert("Gagal mencatat pembayaran.");
     }
   };
 
-  // --- HANDLERS: PENGELUARAN ---
   const handleSaveExpense = async (e) => {
     e.preventDefault();
     try {
-      // Hit endpoint expenses dengan field sesuai ERD (description, amount, expense_date)
       await api.post("/v1/expenses", expenseFormData);
       setIsExpenseModalOpen(false);
       setExpenseFormData(initialExpenseForm);
-      fetchExpenses();
-      alert("Pengeluaran berhasil dicatat.");
+      fetchExpenses(searchTerm, expensePage);
     } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || "Gagal mencatat pengeluaran.");
+      alert("Gagal mencatat pengeluaran.");
     }
   };
 
-  // --- TABLE COLUMNS ---
   const colPemasukan = [
     {
       label: "Rumah & Penghuni",
@@ -224,7 +241,6 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Keuangan & Iuran</h2>
@@ -250,7 +266,6 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 inline-flex">
         <button
           onClick={() => {
@@ -259,7 +274,7 @@ export default function FinancePage() {
           }}
           className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "pemasukan" ? "bg-blue-50 text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
         >
-          Pemasukan (Iuran Warga)
+          Pemasukan (Iuran)
         </button>
         <button
           onClick={() => {
@@ -272,7 +287,6 @@ export default function FinancePage() {
         </button>
       </div>
 
-      {/* Toolbar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -280,7 +294,7 @@ export default function FinancePage() {
             type="text"
             placeholder={
               activeTab === "pemasukan"
-                ? "Cari blok rumah atau nama warga..."
+                ? "Cari blok rumah..."
                 : "Cari keterangan pengeluaran..."
             }
             value={searchTerm}
@@ -288,13 +302,8 @@ export default function FinancePage() {
             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
           />
         </div>
-        <button className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center space-x-2 transition shrink-0">
-          <Filter className="w-4 h-4" />
-          <span>Filter Bulan</span>
-        </button>
       </div>
 
-      {/* Tables Area */}
       <div className="relative min-h-[300px]">
         {isLoading && (
           <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm flex items-center justify-center rounded-xl">
@@ -306,21 +315,21 @@ export default function FinancePage() {
             columns={colPemasukan}
             data={payments}
             emptyMessage="Belum ada data pemasukan."
+            meta={paymentMeta}
+            onPageChange={handlePaymentPageChange}
           />
         ) : (
           <Table
             columns={colPengeluaran}
             data={expenses}
             emptyMessage="Belum ada data pengeluaran."
+            meta={expenseMeta}
+            onPageChange={handleExpensePageChange}
           />
         )}
       </div>
 
-      {/* =========================================
-          MODALS
-      ========================================= */}
-
-      {/* MODAL: Pemasukan (Iuran Warga) */}
+      {/* --- FORM MODALS --- */}
       <Modal
         isOpen={isPaymentModalOpen}
         onClose={() => setIsPaymentModalOpen(false)}
@@ -357,7 +366,7 @@ export default function FinancePage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Jenis Iuran (Fee Type)
+                Jenis Iuran
               </label>
               <select
                 required
@@ -391,9 +400,6 @@ export default function FinancePage() {
                 }
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-amber-600 mt-1 font-medium">
-                *Iuran satpam maksimal 1 bulan
-              </p>
             </div>
           </div>
 
@@ -439,23 +445,6 @@ export default function FinancePage() {
               />
             </div>
           </div>
-
-          {/* Rangkuman Tagihan */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-600">
-                Estimasi Total Tagihan:
-              </span>
-              <span className="text-lg font-bold text-emerald-600">
-                Rp{" "}
-                {(
-                  (paymentFormData.fee_type === "security" ? 100000 : 15000) *
-                  paymentFormData.durasi_bulan
-                ).toLocaleString("id-ID")}
-              </span>
-            </div>
-          </div>
-
           <div className="pt-4 flex justify-end space-x-3 border-t border-gray-100 mt-6">
             <button
               type="button"
@@ -474,7 +463,6 @@ export default function FinancePage() {
         </form>
       </Modal>
 
-      {/* MODAL: Pengeluaran Kas (Expenses) */}
       <Modal
         isOpen={isExpenseModalOpen}
         onClose={() => setIsExpenseModalOpen(false)}
@@ -483,7 +471,7 @@ export default function FinancePage() {
         <form className="p-6 space-y-4" onSubmit={handleSaveExpense}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Keterangan / Deskripsi (Description)
+              Keterangan / Deskripsi
             </label>
             <input
               type="text"
@@ -502,31 +490,26 @@ export default function FinancePage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nominal (Amount)
+                Nominal (Rp)
               </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">Rp</span>
-                </div>
-                <input
-                  type="number"
-                  required
-                  placeholder="50000"
-                  min="1"
-                  value={expenseFormData.amount}
-                  onChange={(e) =>
-                    setExpenseFormData({
-                      ...expenseFormData,
-                      amount: e.target.value,
-                    })
-                  }
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              <input
+                type="number"
+                required
+                placeholder="50000"
+                min="1"
+                value={expenseFormData.amount}
+                onChange={(e) =>
+                  setExpenseFormData({
+                    ...expenseFormData,
+                    amount: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanggal (Expense Date)
+                Tanggal
               </label>
               <input
                 type="date"

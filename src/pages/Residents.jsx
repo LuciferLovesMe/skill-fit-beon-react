@@ -15,22 +15,26 @@ import Table from "../components/Table"; // Import komponen tabel yang baru dibu
 import Modal from "../components/Modal";
 import api from "../api/api"; // Import API client (jika sudah dibuat)
 
+const STORAGE_URL = "http://localhost:8000/storage/";
+
 export default function ResidentsPage() {
-  // --- STATE MANAGEMENT ---
   const [residents, setResidents] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const STORAGE_URL = "http://localhost:8000/storage/";
 
-  // State Modal Form
+  // State Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [meta, setMeta] = useState(null);
+
+  // State Modal Form (Menggunakan variabel bahasa Inggris)
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [modalMode, setModalMode] = useState("add");
   const initialFormState = {
     id: null,
     name: "",
-    is_permanent: "1",
+    is_permanent: 1,
     phone_number: "",
-    is_married: "0",
+    is_married: 0,
     id_card_photo: null,
   };
   const [formData, setFormData] = useState(initialFormState);
@@ -39,19 +43,19 @@ export default function ResidentsPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [residentToDelete, setResidentToDelete] = useState(null);
 
-  // --- FETCH DATA (API INTEGRATION) ---
-  const fetchResidents = async (searchQuery = "") => {
+  // --- FETCH DATA ---
+  const fetchResidents = async (searchQuery = "", page = 1) => {
     setIsLoading(true);
     try {
-      // Mengarah ke route: http://localhost:8000/api/v1/residents
       const response = await api.get("/v1/residents", {
         params: {
           search: searchQuery,
-          per_page: 50, // Menampilkan data lebih banyak per halaman
+          per_page: 10,
+          page: page,
         },
       });
-      // Mengambil array item dari JSON response (data.data sesuai format resource Laravel)
       setResidents(response.data.data);
+      setMeta(response.data.meta);
     } catch (error) {
       console.error("Gagal mengambil data penghuni:", error);
     } finally {
@@ -59,15 +63,18 @@ export default function ResidentsPage() {
     }
   };
 
-  // Efek berjalan saat komponen pertama dimuat, dan setiap kali searchTerm berubah
   useEffect(() => {
-    // Memberikan delay (debounce) agar tidak hit API setiap kali mengetik 1 huruf
+    setCurrentPage(1);
     const delayDebounceFn = setTimeout(() => {
-      fetchResidents(searchTerm);
+      fetchResidents(searchTerm, 1);
     }, 500);
-
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+    fetchResidents(searchTerm, newPage);
+  };
 
   // --- HANDLERS ---
   const handleOpenAdd = () => {
@@ -78,14 +85,13 @@ export default function ResidentsPage() {
 
   const handleOpenEdit = (resident) => {
     setModalMode("edit");
-    // Masukkan data dari API ke form
     setFormData({
       id: resident.id,
       name: resident.name,
       is_permanent: resident.is_permanent,
       phone_number: resident.phone_number,
       is_married: resident.is_married,
-      id_card_photo: resident.id_card_photo, // URL untuk ditampilkan
+      id_card_photo: resident.id_card_photo,
     });
     setIsFormOpen(true);
   };
@@ -97,7 +103,12 @@ export default function ResidentsPage() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    // Parsing boolean/integer untuk radio dan select
+    let parsedValue = value;
+    if (value === "1") parsedValue = 1;
+    if (value === "0") parsedValue = 0;
+
+    setFormData({ ...formData, [name]: parsedValue });
   };
 
   const handleFileChange = (e) => {
@@ -106,81 +117,64 @@ export default function ResidentsPage() {
     }
   };
 
-  // --- SUBMIT DATA (API INTEGRATION) ---
   const handleSave = async (e) => {
     e.preventDefault();
-
-    // Gunakan FormData karena kita mengirim file (foto KTP)
     const submitData = new FormData();
     submitData.append("name", formData.name);
     submitData.append("is_permanent", formData.is_permanent);
     submitData.append("phone_number", formData.phone_number);
     submitData.append("is_married", formData.is_married);
 
-    console.log(formData);
-
-    // Append file KTP jika user mengunggah file baru (bentuk File Object)
     if (formData.id_card_photo instanceof File) {
       submitData.append("id_card_photo", formData.id_card_photo);
     }
 
     try {
       if (modalMode === "add") {
-        // POST /v1/residents
         await api.post("/v1/residents", submitData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       } else {
-        // Karena HTML form upload susah menggunakan method PUT murni,
-        // Laravel menyediakan _method spoofing untuk multipart/form-data
         submitData.append("_method", "PUT");
-
-        // POST /v1/residents/{id}
         await api.post(`/v1/residents/${formData.id}`, submitData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       }
       handleCloseForm();
-      fetchResidents(searchTerm); // Refresh tabel
+      fetchResidents(searchTerm, currentPage);
     } catch (error) {
       console.error(error);
-      alert("Gagal menyimpan data. Pastikan form telah diisi dengan benar.");
+      alert("Gagal menyimpan data.");
     }
   };
 
-  // --- DELETE DATA (API INTEGRATION) ---
   const handleDelete = async () => {
     try {
       await api.delete(`/v1/residents/${residentToDelete.id}`);
       setIsDeleteOpen(false);
       setResidentToDelete(null);
-      fetchResidents(searchTerm); // Refresh tabel
+      setCurrentPage(1);
+      fetchResidents(searchTerm, 1);
     } catch (error) {
       console.error(error);
       alert("Gagal menghapus data warga.");
     }
   };
 
-  // --- LOGIKA PREVIEW GAMBAR ---
   const getPreviewUrl = () => {
     if (!formData.id_card_photo) return null;
-    // Jika file baru dipilih (berbentuk Object File), buat URL lokal untuk preview
-    if (formData.id_card_photo instanceof File) {
+    if (formData.id_card_photo instanceof File)
       return URL.createObjectURL(formData.id_card_photo);
-    }
-    // Jika data dari database (berbentuk string path), gabungkan dengan STORAGE_URL
     return `${STORAGE_URL}${formData.id_card_photo}`;
   };
 
-  // --- TABEL CONFIGURATION ---
   const tableColumns = [
     {
       label: "Nama Lengkap",
       render: (r) => (
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold overflow-hidden shrink-0">
+          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold overflow-hidden shrink-0 border border-slate-300">
             {r.id_card_photo ? (
-              // Menggabungkan STORAGE_URL standar Laravel dengan path database
               <img
                 src={`${STORAGE_URL}${r.id_card_photo}`}
                 alt="KTP"
@@ -204,15 +198,11 @@ export default function ResidentsPage() {
               : "bg-amber-100 text-amber-700"
           }`}
         >
-          {r.is_permanent === 1 ? "Penghuni Tetap" : "Kontrak"}
+          {r.is_permanent === 1 ? "TETAP" : "KONTRAK"}
         </span>
       ),
     },
-    {
-      label: "No. Telepon",
-      accessor: "nomor_telepon",
-      render: (r) => (r.phone_number ? r.phone_number : "-"),
-    },
+    { label: "No. Telepon", accessor: "phone_number" },
     {
       label: "Status Menikah",
       render: (r) => (r.is_married === 1 ? "Menikah" : "Belum Menikah"),
@@ -245,7 +235,6 @@ export default function ResidentsPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header & Button Tambah */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Daftar Penghuni</h2>
         <button
@@ -257,7 +246,6 @@ export default function ResidentsPage() {
         </button>
       </div>
 
-      {/* Toolbar: Search & Filter */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -275,23 +263,25 @@ export default function ResidentsPage() {
         </button>
       </div>
 
-      {/* Tabel Data (Dengan efek loading) */}
       <div className="relative">
         {isLoading && (
-          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm flex items-center justify-center rounded-xl">
+          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm flex items-center justify-center rounded-xl border border-transparent">
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           </div>
         )}
+
+        {/* Pass parameter meta & onPageChange ke komponen Table */}
         <Table
           columns={tableColumns}
-          data={residents} // Langsung inject data dari state (hasil hit API)
+          data={residents}
           emptyMessage={
             isLoading ? "Memuat data..." : "Data penghuni tidak ditemukan."
           }
+          meta={meta}
+          onPageChange={handlePageChange}
         />
       </div>
 
-      {/* FORM MODAL */}
       <Modal
         isOpen={isFormOpen}
         onClose={handleCloseForm}
@@ -340,8 +330,8 @@ export default function ResidentsPage() {
                 onChange={handleChange}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
               >
-                <option value="0">Belum Menikah</option>
-                <option value="1">Sudah Menikah</option>
+                <option value={0}>Belum Menikah</option>
+                <option value={1}>Sudah Menikah</option>
               </select>
             </div>
           </div>
@@ -356,9 +346,7 @@ export default function ResidentsPage() {
                   type="radio"
                   name="is_permanent"
                   value="1"
-                  checked={
-                    formData.is_permanent === 1 || formData.is_permanent === "1"
-                  }
+                  checked={formData.is_permanent === 1}
                   onChange={handleChange}
                   className="text-blue-600 focus:ring-blue-500"
                 />
@@ -369,9 +357,7 @@ export default function ResidentsPage() {
                   type="radio"
                   name="is_permanent"
                   value="0"
-                  checked={
-                    formData.is_permanent === 0 || formData.is_permanent === "0"
-                  }
+                  checked={formData.is_permanent === 0}
                   onChange={handleChange}
                   className="text-blue-600 focus:ring-blue-500"
                 />
@@ -387,7 +373,6 @@ export default function ResidentsPage() {
               Foto KTP
             </label>
             <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:bg-gray-50 transition relative overflow-hidden group">
-              {/* Jika ada gambar, tampilkan previewnya sebagai background */}
               {getPreviewUrl() && (
                 <div className="absolute inset-0 w-full h-full opacity-30 group-hover:opacity-10 transition-opacity">
                   <img
@@ -397,7 +382,6 @@ export default function ResidentsPage() {
                   />
                 </div>
               )}
-
               <div className="space-y-1 text-center relative z-10">
                 {getPreviewUrl() ? (
                   <img
@@ -408,7 +392,6 @@ export default function ResidentsPage() {
                 ) : (
                   <ImageIcon className="mx-auto h-10 w-10 text-gray-400" />
                 )}
-
                 <div className="flex text-sm text-gray-600 justify-center mt-3">
                   <label className="relative cursor-pointer bg-white px-3 py-1 border border-gray-200 rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none shadow-sm">
                     <span>
@@ -445,7 +428,6 @@ export default function ResidentsPage() {
         </form>
       </Modal>
 
-      {/* DELETE CONFIRMATION MODAL */}
       <Modal
         isOpen={isDeleteOpen}
         onClose={() => setIsDeleteOpen(false)}
