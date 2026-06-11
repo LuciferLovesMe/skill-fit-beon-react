@@ -24,17 +24,39 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+/**
+ * Komponen GuestRoute:
+ * Mencegah user yang SUDAH LOGIN kembali ke halaman Login.
+ * Jika token ada, lempar paksa ke Dashboard ( / ).
+ */
+const GuestRoute = ({ children }) => {
+  const token = localStorage.getItem("token");
+
+  if (token) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         {/* ==========================================
-            RUTE PUBLIK
+            RUTE PUBLIK (Hanya untuk Guest)
         ========================================== */}
-        <Route path="/login" element={<Login />} />
+        <Route
+          path="/login"
+          element={
+            <GuestRoute>
+              <Login />
+            </GuestRoute>
+          }
+        />
 
         {/* ==========================================
-            RUTE TERPROTEKSi (Wajib Login)
+            RUTE TERPROTEKSI (Wajib Login)
         ========================================== */}
         <Route
           path="/"
@@ -53,7 +75,7 @@ export default function App() {
 
         {/* ==========================================
             RUTE FALLBACK (404)
-            Jika user mengetik URL ngawur, kembalikan ke Dashboard
+            Jika user mengetik URL ngawur, arahkan ke Dashboard (nanti ProtectedRoute yang akan handle sisanya)
         ========================================== */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
