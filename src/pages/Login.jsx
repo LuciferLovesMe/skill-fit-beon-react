@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { MapPin, Lock, Mail, ArrowRight, Activity } from "lucide-react";
+import api from "../api/api"; // Pastikan file api.jsx sudah dibuat dan dikonfigurasi
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -7,27 +8,36 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    // Simulasi proses API (Nantinya diganti dengan Axios)
-    setTimeout(() => {
-      // Mock validasi sederhana
-      if (email === "admin@rt.com" && password === "password123") {
-        // Berhasil login
-        // Di integrasi nyata: simpan token ke localStorage lalu redirect
-        // localStorage.setItem('token', 'dummy-token');
-        // navigate('/');
-        alert(
-          "Simulasi Login Berhasil! (Di project nyata akan dialihkan ke Dashboard)",
-        );
+    try {
+      // 1. Tembak API ke endpoint /login
+      const response = await api.post("/login", {
+        email: email,
+        password: password,
+      });
+
+      // 2. Jika sukses, ambil token dari respon
+      const token = response.data.data.token;
+
+      // 3. Simpan token ke Local Storage
+      localStorage.setItem("token", token);
+
+      // 4. Arahkan pengguna ke halaman Dashboard
+      window.location.href = "/";
+    } catch (err) {
+      // Tangani error yang dikembalikan oleh backend
+      if (err.response && err.response.data && err.response.data.message) {
+        setError(err.response.data.message);
       } else {
-        setError("Email atau password tidak sesuai.");
+        setError("Gagal terhubung ke server. Pastikan backend berjalan.");
       }
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
