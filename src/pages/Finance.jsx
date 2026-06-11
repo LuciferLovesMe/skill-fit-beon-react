@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   DollarSign,
   Plus,
@@ -8,75 +8,45 @@ import {
   Filter,
   CheckCircle,
   X,
+  Loader2,
+  Clock,
 } from "lucide-react";
-import Table from "../components/Table"; // Import komponen tabel yang baru dibuat
 import Modal from "../components/Modal";
-
-const mockPemasukan = [
-  {
-    id: 1,
-    rumah: "Blok A-01",
-    penghuni: "Budi Santoso",
-    jenis: "kebersihan",
-    bulan: 6,
-    tahun: 2026,
-    nominal: 15000,
-    tgl_bayar: "2026-06-01",
-  },
-  {
-    id: 2,
-    rumah: "Blok A-01",
-    penghuni: "Budi Santoso",
-    jenis: "satpam",
-    bulan: 6,
-    tahun: 2026,
-    nominal: 100000,
-    tgl_bayar: "2026-06-01",
-  },
-  {
-    id: 3,
-    rumah: "Blok A-02",
-    penghuni: "Siti Aminah",
-    jenis: "kebersihan",
-    bulan: 6,
-    tahun: 2026,
-    nominal: 15000,
-    tgl_bayar: "2026-06-05",
-  },
-];
-
-const mockPengeluaran = [
-  {
-    id: 1,
-    keterangan: "Gaji Satpam Bulan Juni",
-    nominal: 2500000,
-    tanggal: "2026-06-02",
-  },
-  {
-    id: 2,
-    keterangan: "Perbaikan Selokan Blok A",
-    nominal: 850000,
-    tanggal: "2026-06-10",
-  },
-  {
-    id: 3,
-    keterangan: "Token Listrik Pos Satpam",
-    nominal: 200000,
-    tanggal: "2026-06-15",
-  },
-];
+import api from "../api/api";
+import Table from "../components/Table";
 
 export default function FinancePage() {
   const [activeTab, setActiveTab] = useState("pemasukan"); // 'pemasukan' | 'pengeluaran'
 
   // Data State
-  const [pemasukan, setPemasukan] = useState(mockPemasukan);
-  const [pengeluaran, setPengeluaran] = useState(mockPengeluaran);
+  const [payments, setPayments] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [housesList, setHousesList] = useState([]); // Untuk dropdown pilihan rumah di form Iuran
+
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   // Modal State
-  const [isPemasukanModalOpen, setIsPemasukanModalOpen] = useState(false);
-  const [isPengeluaranModalOpen, setIsPengeluaranModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+
+  // Form State Iuran (Berdasarkan ERD)
+  const initialPaymentForm = {
+    house_id: "",
+    fee_type: "cleaning", // 'cleaning' | 'security'
+    durasi_bulan: 1, // Untuk kalkulasi bulk payment
+    bulan_mulai: new Date().getMonth() + 1,
+    tahun: new Date().getFullYear(),
+  };
+  const [paymentFormData, setPaymentFormData] = useState(initialPaymentForm);
+
+  // Form State Pengeluaran (Berdasarkan ERD)
+  const initialExpenseForm = {
+    description: "",
+    amount: "",
+    expense_date: new Date().toISOString().split("T")[0],
+  };
+  const [expenseFormData, setExpenseFormData] = useState(initialExpenseForm);
 
   const namaBulan = [
     "Januari",
@@ -93,14 +63,102 @@ export default function FinancePage() {
     "Desember",
   ];
 
-  // Column Configurations
+  // --- FETCH DATA ---
+  const fetchPayments = async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get("/v1/payments", {
+        params: { search: searchTerm },
+      });
+      setPayments(response.data.data);
+    } catch (error) {
+      console.error("Gagal mengambil data pemasukan:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchExpenses = async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get("/v1/expenses", {
+        params: { search: searchTerm },
+      });
+      setExpenses(response.data.data);
+    } catch (error) {
+      console.error("Gagal mengambil data pengeluaran:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchHousesForDropdown = async () => {
+    try {
+      // Ambil rumah yang hanya 'dihuni' karena yang ditagih iuran hanya yang ada orangnya
+      const response = await api.get("/v1/houses", {
+        params: { status_hunian: "dihuni", per_page: 100 },
+      });
+      setHousesList(response.data.data);
+    } catch (error) {
+      console.error("Gagal mengambil data rumah:", error);
+    }
+  };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (activeTab === "pemasukan") fetchPayments();
+      else fetchExpenses();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, activeTab]);
+
+  useEffect(() => {
+    fetchHousesForDropdown();
+  }, []);
+
+  // --- HANDLERS: PEMBAYARAN IURAN ---
+  const handleSavePayment = async (e) => {
+    e.preventDefault();
+    try {
+      // Hit endpoint untuk membayar (Sesuai dengan logic backend Laravel modular yang bisa bulk)
+      await api.post("/v1/payments/pay", paymentFormData);
+      setIsPaymentModalOpen(false);
+      setPaymentFormData(initialPaymentForm);
+      fetchPayments();
+      alert("Pembayaran berhasil dicatat.");
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.message || "Gagal mencatat pembayaran.");
+    }
+  };
+
+  // --- HANDLERS: PENGELUARAN ---
+  const handleSaveExpense = async (e) => {
+    e.preventDefault();
+    try {
+      // Hit endpoint expenses dengan field sesuai ERD (description, amount, expense_date)
+      await api.post("/v1/expenses", expenseFormData);
+      setIsExpenseModalOpen(false);
+      setExpenseFormData(initialExpenseForm);
+      fetchExpenses();
+      alert("Pengeluaran berhasil dicatat.");
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.message || "Gagal mencatat pengeluaran.");
+    }
+  };
+
+  // --- TABLE COLUMNS ---
   const colPemasukan = [
     {
       label: "Rumah & Penghuni",
       render: (r) => (
         <div>
-          <p className="font-bold text-gray-800">{r.rumah}</p>
-          <p className="text-xs text-gray-500">{r.penghuni}</p>
+          <p className="font-bold text-gray-800">{r.house?.block_number}</p>
+          <p className="text-xs text-gray-500">
+            {r.resident?.name || "Penghuni Tidak Diketahui"}
+          </p>
         </div>
       ),
     },
@@ -108,80 +166,82 @@ export default function FinancePage() {
       label: "Jenis Iuran",
       render: (r) => (
         <span
-          className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider ${r.jenis === "satpam" ? "bg-indigo-100 text-indigo-700" : "bg-teal-100 text-teal-700"}`}
+          className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider ${r.fee_type === "security" ? "bg-indigo-100 text-indigo-700" : "bg-teal-100 text-teal-700"}`}
         >
-          {r.jenis}
+          {r.fee_type === "security" ? "Satpam" : "Kebersihan"}
         </span>
       ),
     },
-    { label: "Periode", render: (r) => `${namaBulan[r.bulan - 1]} ${r.tahun}` },
+    { label: "Periode", render: (r) => `${namaBulan[r.month - 1]} ${r.year}` },
     {
-      label: "Nominal",
+      label: "Nominal Dibayar",
       render: (r) => (
         <span className="font-medium text-gray-800">
-          Rp {r.nominal.toLocaleString("id-ID")}
+          Rp{" "}
+          {parseInt(r.paid_amount || r.billed_amount).toLocaleString("id-ID")}
         </span>
       ),
     },
-    { label: "Tgl Bayar", accessor: "tgl_bayar" },
+    { label: "Tgl Bayar", render: (r) => r.payment_date || "-" },
     {
       label: "Status",
-      render: () => (
-        <span className="flex items-center text-emerald-600 text-xs font-bold">
-          <CheckCircle className="w-4 h-4 mr-1" /> LUNAS
-        </span>
-      ),
+      render: (r) =>
+        r.is_paid == 1 ? (
+          <span className="flex items-center text-emerald-600 text-xs font-bold">
+            <CheckCircle className="w-4 h-4 mr-1" /> LUNAS
+          </span>
+        ) : (
+          <span className="flex items-center text-amber-600 text-xs font-bold">
+            <Clock className="w-4 h-4 mr-1" /> PENDING
+          </span>
+        ),
     },
   ];
 
   const colPengeluaran = [
-    { label: "Tanggal", accessor: "tanggal", headerClassName: "w-40" },
     {
-      label: "Keterangan Pengeluaran",
+      label: "Tanggal Pengeluaran",
       render: (r) => (
-        <span className="font-medium text-gray-800">{r.keterangan}</span>
+        <span className="font-medium text-gray-600">{r.expense_date}</span>
+      ),
+      headerClassName: "w-48",
+    },
+    {
+      label: "Keterangan / Deskripsi",
+      render: (r) => (
+        <span className="font-bold text-gray-800">{r.description}</span>
       ),
     },
     {
       label: "Nominal",
       render: (r) => (
         <span className="font-bold text-rose-600">
-          Rp {r.nominal.toLocaleString("id-ID")}
+          Rp {parseInt(r.amount).toLocaleString("id-ID")}
         </span>
       ),
     },
   ];
 
-  // Filters
-  const filteredPemasukan = pemasukan.filter(
-    (p) =>
-      p.rumah.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.penghuni.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
-  const filteredPengeluaran = pengeluaran.filter((p) =>
-    p.keterangan.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Keuangan & Iuran</h2>
           <p className="text-gray-500 text-sm mt-1">
-            Catat transaksi pemasukan iuran dan pengeluaran kas RT
+            Catat transaksi pemasukan iuran warga dan pengeluaran kas RT
           </p>
         </div>
         <div className="flex space-x-3 shrink-0">
           <button
-            onClick={() => setIsPemasukanModalOpen(true)}
+            onClick={() => setIsPaymentModalOpen(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition shadow-sm"
           >
             <ArrowDownToLine className="w-4 h-4" />
             <span>Terima Iuran</span>
           </button>
           <button
-            onClick={() => setIsPengeluaranModalOpen(true)}
+            onClick={() => setIsExpenseModalOpen(true)}
             className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition shadow-sm"
           >
             <ArrowUpFromLine className="w-4 h-4" />
@@ -193,13 +253,19 @@ export default function FinancePage() {
       {/* Tabs */}
       <div className="bg-white p-1 rounded-xl shadow-sm border border-gray-100 inline-flex">
         <button
-          onClick={() => setActiveTab("pemasukan")}
+          onClick={() => {
+            setActiveTab("pemasukan");
+            setSearchTerm("");
+          }}
           className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "pemasukan" ? "bg-blue-50 text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
         >
           Pemasukan (Iuran Warga)
         </button>
         <button
-          onClick={() => setActiveTab("pengeluaran")}
+          onClick={() => {
+            setActiveTab("pengeluaran");
+            setSearchTerm("");
+          }}
           className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "pengeluaran" ? "bg-rose-50 text-rose-700 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
         >
           Pengeluaran Kas
@@ -214,7 +280,7 @@ export default function FinancePage() {
             type="text"
             placeholder={
               activeTab === "pemasukan"
-                ? "Cari rumah atau nama warga..."
+                ? "Cari blok rumah atau nama warga..."
                 : "Cari keterangan pengeluaran..."
             }
             value={searchTerm}
@@ -228,85 +294,179 @@ export default function FinancePage() {
         </button>
       </div>
 
-      {/* Tables */}
-      {activeTab === "pemasukan" ? (
-        <Table
-          columns={colPemasukan}
-          data={filteredPemasukan}
-          emptyMessage="Belum ada data pemasukan."
-        />
-      ) : (
-        <Table
-          columns={colPengeluaran}
-          data={filteredPengeluaran}
-          emptyMessage="Belum ada data pengeluaran."
-        />
-      )}
+      {/* Tables Area */}
+      <div className="relative min-h-[300px]">
+        {isLoading && (
+          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm flex items-center justify-center rounded-xl">
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+          </div>
+        )}
+        {activeTab === "pemasukan" ? (
+          <Table
+            columns={colPemasukan}
+            data={payments}
+            emptyMessage="Belum ada data pemasukan."
+          />
+        ) : (
+          <Table
+            columns={colPengeluaran}
+            data={expenses}
+            emptyMessage="Belum ada data pengeluaran."
+          />
+        )}
+      </div>
 
-      {/* MODAL: Pemasukan */}
+      {/* =========================================
+          MODALS
+      ========================================= */}
+
+      {/* MODAL: Pemasukan (Iuran Warga) */}
       <Modal
-        isOpen={isPemasukanModalOpen}
-        onClose={() => setIsPemasukanModalOpen(false)}
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
         title="Penerimaan Iuran Baru"
       >
-        <form
-          className="p-6 space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setIsPemasukanModalOpen(false);
-          }}
-        >
+        <form className="p-6 space-y-4" onSubmit={handleSavePayment}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Pilih Rumah & Penghuni
+              Pilih Rumah & Penghuni Aktif
             </label>
             <select
               required
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white"
+              value={paymentFormData.house_id}
+              onChange={(e) =>
+                setPaymentFormData({
+                  ...paymentFormData,
+                  house_id: e.target.value,
+                })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">-- Pilih Rumah --</option>
-              <option value="1">Blok A-01 (Budi Santoso)</option>
-              <option value="2">Blok A-02 (Siti Aminah)</option>
+              <option value="" disabled>
+                -- Pilih Rumah --
+              </option>
+              {housesList.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.block_number} - (
+                  {h.current_occupancy?.resident?.name || "Kosong"})
+                </option>
+              ))}
             </select>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Jenis Iuran
+                Jenis Iuran (Fee Type)
               </label>
               <select
                 required
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white"
+                value={paymentFormData.fee_type}
+                onChange={(e) =>
+                  setPaymentFormData({
+                    ...paymentFormData,
+                    fee_type: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white focus:ring-2 focus:ring-blue-500"
               >
-                <option value="kebersihan">Kebersihan (Rp 15.000)</option>
-                <option value="satpam">Satpam (Rp 100.000)</option>
+                <option value="cleaning">Kebersihan (Rp 15.000 / bln)</option>
+                <option value="security">Satpam (Rp 100.000 / bln)</option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Durasi (Bulan)
+                Durasi Bayar (Bulan)
               </label>
               <input
                 type="number"
                 min="1"
                 max="12"
-                defaultValue="1"
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none"
+                value={paymentFormData.durasi_bulan}
+                onChange={(e) =>
+                  setPaymentFormData({
+                    ...paymentFormData,
+                    durasi_bulan: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-500 mt-1">*Satpam max 1 bulan</p>
+              <p className="text-xs text-amber-600 mt-1 font-medium">
+                *Iuran satpam maksimal 1 bulan
+              </p>
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mulai Bulan ke-
+              </label>
+              <select
+                required
+                value={paymentFormData.bulan_mulai}
+                onChange={(e) =>
+                  setPaymentFormData({
+                    ...paymentFormData,
+                    bulan_mulai: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none bg-white focus:ring-2 focus:ring-blue-500"
+              >
+                {namaBulan.map((nama, idx) => (
+                  <option key={idx + 1} value={idx + 1}>
+                    {idx + 1} - {nama}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tahun
+              </label>
+              <input
+                type="number"
+                min="2020"
+                max="2100"
+                value={paymentFormData.tahun}
+                onChange={(e) =>
+                  setPaymentFormData({
+                    ...paymentFormData,
+                    tahun: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Rangkuman Tagihan */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-600">
+                Estimasi Total Tagihan:
+              </span>
+              <span className="text-lg font-bold text-emerald-600">
+                Rp{" "}
+                {(
+                  (paymentFormData.fee_type === "security" ? 100000 : 15000) *
+                  paymentFormData.durasi_bulan
+                ).toLocaleString("id-ID")}
+              </span>
+            </div>
+          </div>
+
           <div className="pt-4 flex justify-end space-x-3 border-t border-gray-100 mt-6">
             <button
               type="button"
-              onClick={() => setIsPemasukanModalOpen(false)}
-              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+              onClick={() => setIsPaymentModalOpen(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium"
+              className="px-4 py-2 text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium transition"
             >
               Proses Pembayaran
             </button>
@@ -314,64 +474,85 @@ export default function FinancePage() {
         </form>
       </Modal>
 
-      {/* MODAL: Pengeluaran */}
+      {/* MODAL: Pengeluaran Kas (Expenses) */}
       <Modal
-        isOpen={isPengeluaranModalOpen}
-        onClose={() => setIsPengeluaranModalOpen(false)}
+        isOpen={isExpenseModalOpen}
+        onClose={() => setIsExpenseModalOpen(false)}
         title="Catat Pengeluaran Kas"
       >
-        <form
-          className="p-6 space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setIsPengeluaranModalOpen(false);
-          }}
-        >
+        <form className="p-6 space-y-4" onSubmit={handleSaveExpense}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Keterangan Pengeluaran
+              Keterangan / Deskripsi (Description)
             </label>
             <input
               type="text"
               required
-              placeholder="Contoh: Beli lampu jalan"
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none"
+              placeholder="Contoh: Beli lampu jalan Blok A"
+              value={expenseFormData.description}
+              onChange={(e) =>
+                setExpenseFormData({
+                  ...expenseFormData,
+                  description: e.target.value,
+                })
+              }
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nominal (Rp)
+                Nominal (Amount)
               </label>
-              <input
-                type="number"
-                required
-                placeholder="50000"
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none"
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <span className="text-gray-500 sm:text-sm">Rp</span>
+                </div>
+                <input
+                  type="number"
+                  required
+                  placeholder="50000"
+                  min="1"
+                  value={expenseFormData.amount}
+                  onChange={(e) =>
+                    setExpenseFormData({
+                      ...expenseFormData,
+                      amount: e.target.value,
+                    })
+                  }
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanggal
+                Tanggal (Expense Date)
               </label>
               <input
                 type="date"
                 required
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none"
+                value={expenseFormData.expense_date}
+                onChange={(e) =>
+                  setExpenseFormData({
+                    ...expenseFormData,
+                    expense_date: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
           <div className="pt-4 flex justify-end space-x-3 border-t border-gray-100 mt-6">
             <button
               type="button"
-              onClick={() => setIsPengeluaranModalOpen(false)}
-              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+              onClick={() => setIsExpenseModalOpen(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-white bg-rose-600 hover:bg-rose-700 rounded-lg font-medium"
+              className="px-4 py-2 text-white bg-rose-600 hover:bg-rose-700 rounded-lg font-medium transition"
             >
               Simpan Pengeluaran
             </button>
